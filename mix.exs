@@ -7,7 +7,7 @@ defmodule PhoenixEctoSync.MixProject do
       app: :phoenix_ecto_sync,
       name: "PhoenixEctoSync",
       description: "A set of EctoSync functions specific to Phoenix and LiveView",
-      version: "0.2.0",
+      version: "0.3.0",
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
