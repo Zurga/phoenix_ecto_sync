@@ -17,6 +17,12 @@ defmodule Phoenix.EctoSync do
     end
   end
 
+  defdelegate get(event, opts \\ []), to: EctoSync
+  defdelegate subscribe(values, opts \\ []), to: EctoSync
+  defdelegate subscriptions(watcher_identifier, id \\ nil), to: EctoSync
+  defdelegate unsubscribe(alue, id \\ []), to: EctoSync
+  defdelegate watchers(watchers \\ [], schema), to: EctoSync
+
   # defmacro __live_view__(env) do
   #   tracked = Module.get_attribute(env.module, :phoenix_ecto_sync)
   #   # async_tracks = Enum.filter(tracked, &(&1.async == true))
