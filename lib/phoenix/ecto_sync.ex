@@ -13,14 +13,36 @@ defmodule Phoenix.EctoSync do
     quote do
       import unquote(__MODULE__ |> IO.inspect(label: :import_module))
       Module.register_attribute(__MODULE__, :phoenix_ecto_sync, accumulate: true)
+      Module.register_attribute(__MODULE__, :phoenix_ecto_sync_assigns, accumulate: true)
       # @before_compile {Phoenix.EctoSync, :"__#{unquote(which)}__"}
+      @before_compile {Phoenix.EctoSync, :__merge_assigns__}
     end
+  end
+
+  defmacro __merge_assigns__(env) do
+    assigns =
+      Module.get_attribute(env.module, :phoenix_ecto_sync_assigns)
+      |> Enum.into(%{})
+
+    Module.put_attribute(env.module, :phoenix_ecto_sync_assigns_merged, assigns)
   end
 
   defdelegate get(event, opts \\ []), to: EctoSync
   defdelegate subscribe(values, opts \\ []), to: EctoSync
+
+  defmacro subscribe(assign, schema, values, opts \\ []) do
+    Module.put_attribute(__CALLER__.module, :phoenix_ecto_sync_assigns, {assign, schema})
+
+    quote do
+      if connected?(socket) do
+        unquote(__MODULE__).subscribe({unquote(schema), :inserted}, nil)
+        unquote(__MODULE__).subscribe(unquote(values), unquote(opts))
+      end
+    end
+  end
+
   defdelegate subscriptions(watcher_identifier, id \\ nil), to: EctoSync
-  defdelegate unsubscribe(alue, id \\ []), to: EctoSync
+  defdelegate unsubscribe(value, id \\ []), to: EctoSync
   defdelegate watchers(watchers \\ [], schema), to: EctoSync
 
   # defmacro __live_view__(env) do
@@ -139,38 +161,59 @@ defmodule Phoenix.EctoSync do
   @doc """
   Syncs an assign in the socket.
   """
-  def sync(socket, assign, {schema, event, {%{id: id}, ref}} = sync_args, opts \\ []) do
+  def sync(socket, assign, {schema, event, _} = sync_args, opts \\ []) do
     {stream_insert_opts, opts} = Keyword.pop(opts, :stream_opts, [])
     {after_fun, opts} = Keyword.pop(opts, :after, nil)
 
-    case socket.assigns[assign] do
-      %AsyncResult{loading: true} ->
-        socket
+    if get_in(socket.assigns, [:streams, assign]) do
+      # TODO handle assoc with parent stream
+      synced = EctoSync.get(sync_args)
 
-      %AsyncResult{ok?: true, result: result} = async_result ->
-        Component.update(socket, assign, fn async_result ->
-          %{async_result | result: EctoSync.sync(result, sync_args, opts)}
-        end)
+      case event do
+        :deleted -> LiveView.stream_delete(socket, assign, synced)
+        _ -> LiveView.stream_insert(socket, assign, synced, stream_insert_opts)
+      end
+    else
+      case socket.assigns[assign] do
+        nil ->
+          socket
 
-      %LiveStream{} = stream ->
-        synced = EctoSync.get(sync_args)
+        %{^assign => %AsyncResult{loading: true}} ->
+          socket
 
-        case event do
-          :deleted -> LiveView.stream_delete(socket, assign, synced)
-          _ -> LiveView.stream_insert(socket, assign, synced, stream_insert_opts)
-        end
-
-      value ->
-        synced = EctoSync.sync(value, sync_args, opts)
-
-        Component.update(socket, assign, fn _ -> synced end)
-        |> then(fn socket ->
-          if after_fun do
-            after_fun.(socket, value)
+        %{^assign => %AsyncResult{ok?: true, result: result}} ->
+          if should_sync(assign, result, schema) do
+            Component.update(socket, assign, fn async_result ->
+              %{async_result | result: EctoSync.sync(result, sync_args, opts)}
+            end)
           else
             socket
           end
-        end)
+
+        %{^assign => value} ->
+          if should_sync(assign, value, schema) do
+            synced = EctoSync.sync(value, sync_args, opts)
+
+            Component.update(socket, assign, fn _ -> synced end)
+            |> then(fn socket ->
+              if after_fun do
+                after_fun.(socket, value)
+              else
+                socket
+              end
+            end)
+          else
+            socket
+          end
+      end
+    end
+  end
+
+  defp should_sync(assign, value, schema) do
+    if value == [] and schema != @phoenix_ecto_sync_assigns_merged[assign] do
+      false
+    else
+      true
     end
   end
 end

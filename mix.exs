@@ -48,7 +48,7 @@ defmodule PhoenixEctoSync.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:ecto_sync, "~> 0.3.0"},
+      {:ecto_sync, "<= 1.0.0"},
       {:ex_doc, "~> 0.37.2", only: :dev, runtime: false},
       {:credo, "~> 1.6", runtime: false, only: [:dev, :test]},
       {:dialyxir, "~> 1.2", runtime: false, only: [:dev, :test]},
